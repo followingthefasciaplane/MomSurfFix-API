@@ -1,7 +1,7 @@
 # API
 Added an inter-plugin API for consistency of surf physics.  
 See forwards in include/momsurffix2.inc.  
-Example usage here: https://github.com/followingthefasciaplane/sm-surf-trainer/blob/main/surf-trainer-v2-momsurffix-api.sp
+Explanation of surf physics here: https://rampsliders.wiki/doku.php?id=physics%3Asurfsdk13
 
 [![example](https://img.youtube.com/vi/MPAS31U0mws/0.jpg)](https://youtu.be/MPAS31U0mws)
 
