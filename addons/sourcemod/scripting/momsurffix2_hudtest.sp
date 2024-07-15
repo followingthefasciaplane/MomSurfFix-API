@@ -193,7 +193,7 @@ bool IsValidClient(int client)
     return (client > 0 && client <= MaxClients && IsClientInGame(client) && !IsFakeClient(client));
 }
 
-// The following forward functions remain unchanged
+// The following forward functions remain unchanged. More testing is needed for modifying values.
 public Action MomSurfFix_OnBumpIteration(int client, int bumpcount, float velocity[3], float origin[3])
 {
     char lines[5][64];
