@@ -5,16 +5,27 @@
 
 #define SNAME "[momsurffix2] "
 #define GAME_DATA_FILE "momsurffix2.games"
-// #define DEBUG_PROFILE
 // #define DEBUG_MEMTEST
 
+/*
+	this fork creates an inter-plugin API
+	for third party plugins to take advantage
+	of the deep engine hooks and precise movement
+	data that this plugin provides.
+
+	untested on public servers. 
+	performance might be an issue. 
+	mainly intended for LAN use right now.
+*/
+
 public Plugin myinfo = {
-    name = "Momentum surf fix \'2",
-    author = "GAMMA CASE",
-    description = "Ported surf fix from momentum mod.",
-    version = "1.1.5",
-    url = "http://steamcommunity.com/id/_GAMMACASE_/"
+    name = "Momentum surf fix \'2 (API)",
+    author = "GAMMA CASE, jtooler",
+    description = "Ported surf fix from momentum mod with a public API.",
+    version = "3",
+	url = "https://github.com/followingthefasciaplane/MomSurfFix-API/" // url = "http://steamcommunity.com/id/_GAMMACASE_/"
 };
+
 
 #define FLT_EPSILON 1.192092896e-07
 #define MAX_CLIP_PLANES 5
@@ -36,53 +47,62 @@ EngineVersion gEngineVersion;
 #include "glib/memutils"
 #undef MEMUTILS_PLUGINENDCALL
 
-#include "momsurffix/utils.sp"
-#include "momsurffix/baseplayer.sp"
-#include "momsurffix/gametrace.sp"
-#include "momsurffix/gamemovement.sp"
-
 ConVar gRampBumpCount,
 	gBounce,
 	gRampInitialRetraceLength,
 	gNoclipWorkAround;
 
+Handle gFwd_OnClipVelocity;
+Handle gFwd_OnPlayerStuckOnRamp;
+Handle gFwd_OnTryPlayerMovePost;
+
+MomSurfFixContext g_MoveContext[MAXPLAYERS + 1];
+Address g_PlayerAddresses[MAXPLAYERS + 1];
+int g_CurrentMoveClient;
+bool g_ExpectStepMoveUp[MAXPLAYERS + 1];
+int g_ExpectStepMoveTick[MAXPLAYERS + 1];
+
 float vec3_origin[3] = {0.0, 0.0, 0.0};
 bool gBasePlayerLoadedTooEarly;
 
-#if defined DEBUG_PROFILE
-#include "profiler"
-Profiler gProf;
-ArrayList gProfData;
-float gProfTime;
+#include "momsurffix/utils.sp"
+#include "momsurffix/baseplayer.sp"
+#include "momsurffix/gametrace.sp"
+#include "momsurffix/gamemovement.sp"
 
-void PROF_START()
+#define MOMSURFFIX2_CORE
+#include <momsurffix2>
+
+enum struct MomSurfFixContext
 {
-	if(gProf)
-		gProf.Start();
+	int tickCount;
+	int callSerial;
+	MomSurfFixStepPhase stepMovePhase;
 }
 
-void PROF_STOP(int idx)
+void ResetMoveContext(int client)
 {
-	if(gProf)
-	{
-		gProf.Stop();
-		Prof_Check(idx);
-	}
+	if(client < 1 || client > MaxClients)
+		return;
+	
+	g_MoveContext[client].tickCount = 0;
+	g_MoveContext[client].callSerial = 0;
+	g_MoveContext[client].stepMovePhase = MomSurfFixStep_Normal;
+	g_ExpectStepMoveUp[client] = false;
+	g_ExpectStepMoveTick[client] = 0;
 }
-
-#else
-#define PROF_START%1;
-#define PROF_STOP%1;
-#endif
 
 public void OnPluginStart()
 {
 #if defined DEBUG_MEMTEST
 	RegAdminCmd("sm_mom_dumpmempool", SM_Dumpmempool, ADMFLAG_ROOT, "Dumps active momory pool. Mainly for debugging.");
 #endif
-#if defined DEBUG_PROFILE
-	RegAdminCmd("sm_mom_prof", SM_Prof, ADMFLAG_ROOT, "Profiles performance of some expensive parts. Mainly for debugging.");
-#endif
+	gFwd_OnClipVelocity = CreateGlobalForward("MomSurfFix_OnClipVelocity", ET_Ignore,
+		Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Array, Param_Array, Param_Float);
+	gFwd_OnPlayerStuckOnRamp = CreateGlobalForward("MomSurfFix_OnPlayerStuckOnRamp", ET_Ignore,
+		Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Array, Param_Cell, Param_Array);
+	gFwd_OnTryPlayerMovePost = CreateGlobalForward("MomSurfFix_OnTryPlayerMovePost", ET_Ignore,
+		Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Array, Param_Cell, Param_Cell, Param_Array, Param_Float);
 	
 	gRampBumpCount = CreateConVar("momsurffix_ramp_bumpcount", "8", "Helps with fixing surf/ramp bugs", .hasMin = true, .min = 4.0, .hasMax = true, .max = 16.0);
 	gRampInitialRetraceLength = CreateConVar("momsurffix_ramp_initial_retrace_length", "0.2", "Amount of units used in offset for retraces", .hasMin = true, .min = 0.2, .hasMax = true, .max = 5.0);
@@ -105,6 +125,16 @@ public void OnPluginStart()
 	SetupDhooks(gd);
 	
 	delete gd;
+	
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(IsClientInGame(i))
+			g_PlayerAddresses[i] = GetEntityAddress(i);
+		else
+			g_PlayerAddresses[i] = Address_Null;
+		
+		ResetMoveContext(i);
+	}
 }
 
 public void OnMapStart()
@@ -118,77 +148,31 @@ public void OnMapStart()
 	}
 }
 
+public void OnClientPutInServer(int client)
+{
+	g_PlayerAddresses[client] = GetEntityAddress(client);
+	ResetMoveContext(client);
+}
+
+public void OnClientDisconnect(int client)
+{
+	g_PlayerAddresses[client] = Address_Null;
+	ResetMoveContext(client);
+}
+
 public void OnPluginEnd()
 {
 	CleanUpUtils();
+	
+	delete gFwd_OnClipVelocity;
+	delete gFwd_OnPlayerStuckOnRamp;
+	delete gFwd_OnTryPlayerMovePost;
 }
 
 #if defined DEBUG_MEMTEST
 public Action SM_Dumpmempool(int client, int args)
 {
 	DumpMemoryUsage();
-	
-	return Plugin_Handled;
-}
-#endif
-
-#if defined DEBUG_PROFILE
-public Action SM_Prof(int client, int args)
-{
-	if(args < 1)
-	{
-		ReplyToCommand(client, SNAME..."Usage: sm_prof <seconds>");
-		return Plugin_Handled;
-	}
-	
-	char buff[32];
-	GetCmdArg(1, buff, sizeof(buff));
-	gProfTime = StringToFloat(buff);
-	
-	if(gProfTime <= 0.1)
-	{
-		ReplyToCommand(client, SNAME..."Time should be higher then 0.1 seconds.");
-		return Plugin_Handled;
-	}
-	
-	gProfData = new ArrayList(3);
-	gProf = new Profiler();
-	CreateTimer(gProfTime, Prof_Check_Timer, client);
-	
-	ReplyToCommand(client, SNAME..."Profiler started, awaiting %.2f seconds.", gProfTime);
-	
-	return Plugin_Handled;
-}
-
-stock void Prof_Check(int idx)
-{
-	int idx2;
-	if(gProfData.Length - 1 < idx)
-	{
-		idx2 = gProfData.Push(gProf.Time);
-		gProfData.Set(idx2, 1, 1);
-		gProfData.Set(idx2, idx, 2);
-	}
-	else
-	{
-		idx2 = gProfData.FindValue(idx, 2);
-		
-		gProfData.Set(idx2, view_as<float>(gProfData.Get(idx2)) + gProf.Time);
-		gProfData.Set(idx2, gProfData.Get(idx2, 1) + 1, 1);
-	}
-}
-
-public Action Prof_Check_Timer(Handle timer, int client)
-{
-	ReplyToCommand(client, SNAME..."Profiler finished:");
-	if(gProfData.Length == 0)
-		ReplyToCommand(client, SNAME..."There was no profiling data...");
-	
-	for(int i = 0; i < gProfData.Length; i++)
-		ReplyToCommand(client, SNAME..."[%i] Avg time: %f | Calls: %i", i, view_as<float>(gProfData.Get(i)) / float(gProfData.Get(i, 1)), gProfData.Get(i, 1));
-	
-	delete gProf;
-	delete gProfData;
 	
 	return Plugin_Handled;
 }
@@ -230,16 +214,59 @@ public MRESReturn TryPlayerMove_Dhook(Address pThis, Handle hReturn, Handle hPar
 int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace)
 {
 	float original_velocity[3], primal_velocity[3], fixed_origin[3], valid_plane[3], new_velocity[3], end[3], dir[3];
-	float allFraction, d, time_left = GetGameFrameTime(), planes[MAX_CLIP_PLANES][3];
-	int bumpcount, blocked, numplanes, numbumps = gRampBumpCount.IntValue, i, j, h;
+	float allFraction = 0.0, d, time_left = GetGameFrameTime(), planes[MAX_CLIP_PLANES][3];
+	int bumpcount, blocked, numplanes, numbumps = gRampBumpCount.IntValue, i, j, h, lastIteration = -1;
 	bool stuck_on_ramp, has_valid_plane;
 	CGameTrace pm = CGameTrace();
+	int client = GetGameMovementClient(pThis);
+	int tickCount = GetGameTickCount();
+	
+	g_CurrentMoveClient = client;
 	
 	Vector vecVelocity = pThis.mv.m_vecVelocity;
 	vecVelocity.ToArray(original_velocity);
 	vecVelocity.ToArray(primal_velocity);
 	Vector vecAbsOrigin = pThis.mv.m_vecAbsOrigin;
 	vecAbsOrigin.ToArray(fixed_origin);
+	
+	if(client > 0)
+	{
+		if(g_MoveContext[client].tickCount != tickCount)
+		{
+			g_MoveContext[client].callSerial = 0;
+			g_ExpectStepMoveUp[client] = false;
+			g_ExpectStepMoveTick[client] = 0;
+		}
+		else
+		{
+			g_MoveContext[client].callSerial++;
+		}
+		
+		int callSerial = g_MoveContext[client].callSerial;
+		
+		MomSurfFixStepPhase phase = MomSurfFixStep_Normal;
+		bool onGround = (pThis.player.m_hGroundEntity != view_as<Address>(-1));
+		if(onGround && (pFirstDest.Address != Address_Null || pFirstTrace.Address != Address_Null))
+		{
+			phase = MomSurfFixStep_StepMoveDown;
+			g_ExpectStepMoveUp[client] = true;
+			g_ExpectStepMoveTick[client] = tickCount;
+		}
+		else if(onGround && g_ExpectStepMoveUp[client] && g_ExpectStepMoveTick[client] == tickCount)
+		{
+			phase = MomSurfFixStep_StepMoveUp;
+			g_ExpectStepMoveUp[client] = false;
+		}
+		else if(!onGround)
+		{
+			g_ExpectStepMoveUp[client] = false;
+			g_ExpectStepMoveTick[client] = 0;
+		}
+		
+		g_MoveContext[client].tickCount = tickCount;
+		g_MoveContext[client].callSerial = callSerial;
+		g_MoveContext[client].stepMovePhase = phase;
+	}
 	
 	Vector plane_normal;
 	static Vector alloced_vector, alloced_vector2;
@@ -252,6 +279,8 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 	
 	for(bumpcount = 0; bumpcount < numbumps; bumpcount++)
 	{
+		lastIteration = bumpcount;
+		
 		if(vecVelocity.LengthSqr() == 0.0)
 			break;
 		
@@ -322,7 +351,6 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 					{
 						for(h = 0; h < 3; h++)
 						{
-							PROF_START();
 							offset[0] = offsets[i];
 							offset[1] = offsets[j];
 							offset[2] = offsets[h];
@@ -345,9 +373,7 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 								offset_maxs[1] /= 2.0;
 							if(offset[2] < 0.0)
 								offset_maxs[2] /= 2.0;
-							PROF_STOP(0);
-							
-							PROF_START();
+
 							AddVectors(fixed_origin, offset, buff);
 							SubtractVectors(end, offset, offset);
 							if(gEngineVersion == Engine_CSGO)
@@ -360,17 +386,11 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 								SubtractVectors(VectorToArray(GetPlayerMinsCSS(pThis, alloced_vector)), offset_mins, offset_mins); 
 								AddVectors(VectorToArray(GetPlayerMaxsCSS(pThis, alloced_vector2)), offset_maxs, offset_maxs);
 							}
-							PROF_STOP(1);
-							
-							PROF_START();
+
 							ray.Init(buff, offset, offset_mins, offset_maxs);
-							PROF_STOP(2);
-							
-							PROF_START();
+
 							UTIL_TraceRay(ray, MASK_PLAYERSOLID, pThis, COLLISION_GROUP_PLAYER_MOVEMENT, pm);
-							PROF_STOP(3);
-							
-							PROF_START();
+
 							plane_normal = pm.plane.normal;
 							
 							if(FloatAbs(plane_normal.x) <= 1.0 && FloatAbs(plane_normal.y) <= 1.0 &&
@@ -379,7 +399,6 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 								valid_planes++;
 								AddVectors(valid_plane, VectorToArray(plane_normal), valid_plane);
 							}
-							PROF_STOP(4);
 						}
 					}
 				}
@@ -428,8 +447,14 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 		
 		if(bumpcount > 0 && pThis.player.m_hGroundEntity == view_as<Address>(-1) && !IsValidMovementTrace(pThis, pm))
 		{
+			bool prevPlane = has_valid_plane;
 			has_valid_plane = false;
 			stuck_on_ramp = true;
+			
+			if(client > 0 && gFwd_OnPlayerStuckOnRamp != null && GetForwardFunctionCount(gFwd_OnPlayerStuckOnRamp) > 0)
+			{
+				FireStuckForward(client, bumpcount, MomSurfFixStuck_InvalidTrace, vecVelocity, fixed_origin, prevPlane, valid_plane);
+			}
 			continue;
 		}
 		
@@ -442,8 +467,14 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 				
 				if((stuck.startsolid || stuck.fraction != 1.0) && bumpcount == 0)
 				{
+					bool prevPlane = has_valid_plane;
 					has_valid_plane = false;
 					stuck_on_ramp = true;
+					
+					if(client > 0 && gFwd_OnPlayerStuckOnRamp != null && GetForwardFunctionCount(gFwd_OnPlayerStuckOnRamp) > 0)
+					{
+						FireStuckForward(client, bumpcount, MomSurfFixStuck_TraceStartSolid, vecVelocity, fixed_origin, prevPlane, valid_plane);
+					}
 					
 					stuck.Free();
 					continue;
@@ -494,7 +525,6 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 		if(numplanes == 1 && pThis.player.m_MoveType == MOVETYPE_WALK && pThis.player.m_hGroundEntity != view_as<Address>(-1))
 		{
 			Vector vec1 = Vector();
-			PROF_START();
 			if(planes[0][2] >= 0.7)
 			{
 				vec1.FromArray(original_velocity);
@@ -512,7 +542,6 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 				ClipVelocity(pThis, vec1, alloced_vector2, alloced_vector, 1.0 + gBounce.FloatValue * (1.0 - pThis.player.m_surfaceFriction));
 				alloced_vector.ToArray(new_velocity);
 			}
-			PROF_STOP(5);
 			
 			vecVelocity.FromArray(new_velocity);
 			VectorCopy(new_velocity, original_velocity);
@@ -580,7 +609,126 @@ int TryPlayerMove(CGameMovement pThis, Vector pFirstDest, CGameTrace pFirstTrace
 		vecVelocity.FromArray(vec3_origin);
 	
 	pm.Free();
+	
+	if(client > 0)
+	{
+		float finalVelocity[3], finalOrigin[3], finalPlane[3];
+		vecVelocity.ToArray(finalVelocity);
+		vecAbsOrigin.ToArray(finalOrigin);
+		VectorCopy(valid_plane, finalPlane);
+		FireTryPlayerMovePostForward(client, blocked, lastIteration, numbumps, finalVelocity, finalOrigin, stuck_on_ramp, has_valid_plane, finalPlane, allFraction);
+	}
+	
+	g_CurrentMoveClient = 0;
 	return blocked;
+}
+
+int GetGameMovementClient(CGameMovement gm)
+{
+	if(MaxClients <= 0)
+		return 0;
+	
+	Address playerAddr = gm.player.Address;
+	if(playerAddr == Address_Null)
+		return 0;
+	
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(g_PlayerAddresses[i] == playerAddr)
+			return i;
+	}
+	
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(!IsClientInGame(i))
+			continue;
+		
+		Address addr = GetEntityAddress(i);
+		g_PlayerAddresses[i] = addr;
+		
+		if(addr == playerAddr)
+			return i;
+	}
+	
+	return 0;
+}
+
+void FireStuckForward(int client, int bump, MomSurfFixStuckReason reason, Vector velocity, const float origin[3], bool hadPlane, const float plane[3])
+{
+	if(client <= 0 || !gFwd_OnPlayerStuckOnRamp)
+		return;
+	
+	int tickCount = g_MoveContext[client].tickCount;
+	int callSerial = g_MoveContext[client].callSerial;
+	MomSurfFixStepPhase stepPhase = g_MoveContext[client].stepMovePhase;
+	float velocityBuff[3];
+	velocity.ToArray(velocityBuff);
+	
+	Call_StartForward(gFwd_OnPlayerStuckOnRamp);
+	Call_PushCell(client);
+	Call_PushCell(tickCount);
+	Call_PushCell(callSerial);
+	Call_PushCell(stepPhase);
+	Call_PushCell(bump);
+	Call_PushCell(reason);
+	Call_PushArray(velocityBuff, 3);
+	Call_PushArray(origin, 3);
+	Call_PushCell(hadPlane);
+	Call_PushArray(plane, 3);
+	Call_Finish();
+}
+
+void FireTryPlayerMovePostForward(int client, int blocked, int lastBump, int maxBumps, float velocity[3], float origin[3], bool stuck, bool hasPlane, float plane[3], float allFraction)
+{
+	if(client <= 0 || !gFwd_OnTryPlayerMovePost)
+		return;
+	
+	if(GetForwardFunctionCount(gFwd_OnTryPlayerMovePost) == 0)
+		return;
+	
+	int tickCount = g_MoveContext[client].tickCount;
+	int callSerial = g_MoveContext[client].callSerial;
+	MomSurfFixStepPhase stepMovePhase = g_MoveContext[client].stepMovePhase;
+	
+	Call_StartForward(gFwd_OnTryPlayerMovePost);
+	Call_PushCell(client);
+	Call_PushCell(tickCount);
+	Call_PushCell(callSerial);
+	Call_PushCell(stepMovePhase);
+	Call_PushCell(blocked);
+	Call_PushCell(lastBump);
+	Call_PushCell(maxBumps);
+	Call_PushArray(velocity, 3);
+	Call_PushArray(origin, 3);
+	Call_PushCell(stuck);
+	Call_PushCell(hasPlane);
+	Call_PushArray(plane, 3);
+	Call_PushFloat(allFraction);
+	Call_Finish();
+}
+
+void FireClipVelocityForward(int client, float inVec[3], float normal[3], float outVec[3], float overbounce)
+{
+	if(client <= 0 || !gFwd_OnClipVelocity)
+		return;
+	
+	if(GetForwardFunctionCount(gFwd_OnClipVelocity) == 0)
+		return;
+	
+	int tickCount = g_MoveContext[client].tickCount;
+	int callSerial = g_MoveContext[client].callSerial;
+	MomSurfFixStepPhase stepMovePhase = g_MoveContext[client].stepMovePhase;
+	
+	Call_StartForward(gFwd_OnClipVelocity);
+	Call_PushCell(client);
+	Call_PushCell(tickCount);
+	Call_PushCell(callSerial);
+	Call_PushCell(stepMovePhase);
+	Call_PushArray(inVec, 3);
+	Call_PushArray(normal, 3);
+	Call_PushArray(outVec, 3);
+	Call_PushFloat(overbounce);
+	Call_Finish();
 }
 
 stock void VectorMA(float start[3], float scale, float dir[3], float dest[3])
@@ -689,4 +837,11 @@ stock void UTIL_TraceRay(Ray_t ray, int mask, CGameMovement gm, int collisionGro
 		
 		filter.Free();
 	}
+}
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	RegPluginLibrary("momsurffix2");
+	
+	return APLRes_Success;
 }

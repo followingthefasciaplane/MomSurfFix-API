@@ -1,5 +1,5 @@
 #if defined _assertutils_included
-#endinput
+	#endinput
 #endif
 #define _assertutils_included
 
@@ -20,33 +20,41 @@
 
 #define ASSERT(%1)%2;
 #define ASSERT_MSG(%1,%2)%3;
-#define ASSERT_FMT(%1,%2)%3;
 #define ASSERT_FINAL(%1)%2;
 #define ASSERT_FINAL_MSG(%1,%2)%3;
+
+stock void ASSERT_FMT(bool result, const char[] fmt, any ...)
+{
+	// No-op when assertions are disabled.
+}
 
 #elseif defined ASSERTUTILS_FAILSTATE_FUNC
 
 #define ASSERT(%1) if(!(%1)) ASSERTUTILS_FAILSTATE_FUNC(__SNAME..."Assertion failed: \""...#%1..."\"")
 #define ASSERT_MSG(%1,%2) if(!(%1)) ASSERTUTILS_FAILSTATE_FUNC(__SNAME...%2)
-#define ASSERT_FMT(%1,%2) if(!(%1)) ASSERTUTILS_FAILSTATE_FUNC(__SNAME...%2)
 #define ASSERT_FINAL(%1) if(!(%1)) SetFailState(__SNAME..."Assertion failed: \""...#%1..."\"")
 #define ASSERT_FINAL_MSG(%1,%2) if(!(%1)) SetFailState(__SNAME...%2)
+
+stock void ASSERT_FMT(bool result, const char[] fmt, any ...)
+{
+	if(!result)
+	{
+		char buff[ASSERT_FMT_STRING_LEN];
+		VFormat(buff, sizeof(buff), fmt, 3);
+		
+		ASSERTUTILS_FAILSTATE_FUNC(__SNAME..."%s", buff);
+	}
+}
 
 #else
 
 #define ASSERT(%1) if(!(%1)) SetFailState(__SNAME..."Assertion failed: \""...#%1..."\"")
 #define ASSERT_MSG(%1,%2) if(!(%1)) SetFailState(__SNAME...%2)
-#define ASSERT_FMT(%1,%2) if(!(%1)) SetFailState(__SNAME...%2)
 #define ASSERT_FINAL(%1) ASSERT(%1)
 #define ASSERT_FINAL_MSG(%1,%2) ASSERT_MSG(%1,%2)
 
-#endif
-
-// Might be redundant as default ASSERT_MSG accept format arguments just fine.
-#if 0
-stock void ASSERT_FMT(bool result, char[] fmt, any ...)
+stock void ASSERT_FMT(bool result, const char[] fmt, any ...)
 {
-#if !defined ASSERTUTILS_DISABLE
 	if(!result)
 	{
 		char buff[ASSERT_FMT_STRING_LEN];
@@ -54,8 +62,8 @@ stock void ASSERT_FMT(bool result, char[] fmt, any ...)
 		
 		SetFailState(__SNAME..."%s", buff);
 	}
-#endif
 }
+
 #endif
 
 #undef ASSERT_FMT_STRING_LEN

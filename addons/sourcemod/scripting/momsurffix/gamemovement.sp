@@ -21,27 +21,27 @@ enum struct GameMoventOffsets
 	CGameMovementOffsets cgmoffsets;
 	CMoveDataOffsets cmdoffsets;
 }
-static GameMoventOffsets offsets;
+static GameMoventOffsets gmOffsets;
 
 methodmap CMoveData < AddressBase
 {
 	property CBaseHandle m_nPlayerHandle
 	{
-		public get() { return view_as<CBaseHandle>(this.Address + offsets.cmdoffsets.m_nPlayerHandle); }
+		public get() { return view_as<CBaseHandle>(this.Address + gmOffsets.cmdoffsets.m_nPlayerHandle); }
 	}
 	
 	//...
 	
 	property Vector m_vecVelocity
 	{
-		public get() { return view_as<Vector>(this.Address + offsets.cmdoffsets.m_vecVelocity); }
+		public get() { return view_as<Vector>(this.Address + gmOffsets.cmdoffsets.m_vecVelocity); }
 	}
 	
 	//...
 	
 	property Vector m_vecAbsOrigin
 	{
-		public get() { return view_as<Vector>(this.Address + offsets.cmdoffsets.m_vecAbsOrigin); }
+		public get() { return view_as<Vector>(this.Address + gmOffsets.cmdoffsets.m_vecAbsOrigin); }
 	}
 }
 
@@ -49,25 +49,25 @@ methodmap CGameMovement < AddressBase
 {
 	property CBasePlayer player
 	{
-		public get() { return view_as<CBasePlayer>(LoadFromAddress(this.Address + offsets.cgmoffsets.player, NumberType_Int32)); }
+		public get() { return view_as<CBasePlayer>(LoadFromAddress(this.Address + gmOffsets.cgmoffsets.player, NumberType_Int32)); }
 	}
 	
 	property CMoveData mv
 	{
-		public get() { return view_as<CMoveData>(LoadFromAddress(this.Address + offsets.cgmoffsets.mv, NumberType_Int32)); }
+		public get() { return view_as<CMoveData>(LoadFromAddress(this.Address + gmOffsets.cgmoffsets.mv, NumberType_Int32)); }
 	}
 	
 	//...
 	
 	property ITraceListData m_pTraceListData
 	{
-		public get() { return view_as<ITraceListData>(LoadFromAddress(this.Address + offsets.cgmoffsets.m_pTraceListData, NumberType_Int32)); }
+		public get() { return view_as<ITraceListData>(LoadFromAddress(this.Address + gmOffsets.cgmoffsets.m_pTraceListData, NumberType_Int32)); }
 	}
 	
 	property int m_nTraceCount
 	{
-		public get() { return LoadFromAddress(this.Address + offsets.cgmoffsets.m_nTraceCount, NumberType_Int32); }
-		public set(int _tracecount) { StoreToAddress(this.Address + offsets.cgmoffsets.m_nTraceCount, _tracecount, NumberType_Int32, false); }
+		public get() { return LoadFromAddress(this.Address + gmOffsets.cgmoffsets.m_nTraceCount, NumberType_Int32); }
+		public set(int _tracecount) { StoreToAddress(this.Address + gmOffsets.cgmoffsets.m_nTraceCount, _tracecount, NumberType_Int32, false); }
 	}
 }
 
@@ -118,29 +118,29 @@ stock void InitGameMovement(GameData gd)
 	
 	//CGameMovement
 	ASSERT_FMT(gd.GetKeyValue("CGameMovement::player", buff, sizeof(buff)), "Can't get \"CGameMovement::player\" offset from gamedata.");
-	offsets.cgmoffsets.player = StringToInt(buff);
+	gmOffsets.cgmoffsets.player = StringToInt(buff);
 	ASSERT_FMT(gd.GetKeyValue("CGameMovement::mv", buff, sizeof(buff)), "Can't get \"CGameMovement::mv\" offset from gamedata.");
-	offsets.cgmoffsets.mv = StringToInt(buff);
+	gmOffsets.cgmoffsets.mv = StringToInt(buff);
 	
 	if(gEngineVersion == Engine_CSGO)
 	{
 		ASSERT_FMT(gd.GetKeyValue("CGameMovement::m_pTraceListData", buff, sizeof(buff)), "Can't get \"CGameMovement::m_pTraceListData\" offset from gamedata.");
-		offsets.cgmoffsets.m_pTraceListData = StringToInt(buff);
+		gmOffsets.cgmoffsets.m_pTraceListData = StringToInt(buff);
 		ASSERT_FMT(gd.GetKeyValue("CGameMovement::m_nTraceCount", buff, sizeof(buff)), "Can't get \"CGameMovement::m_nTraceCount\" offset from gamedata.");
-		offsets.cgmoffsets.m_nTraceCount = StringToInt(buff);
+		gmOffsets.cgmoffsets.m_nTraceCount = StringToInt(buff);
 	}
 	
 	//CMoveData
 	if(gEngineVersion == Engine_CSS)
 	{
 		ASSERT_FMT(gd.GetKeyValue("CMoveData::m_nPlayerHandle", buff, sizeof(buff)), "Can't get \"CMoveData::m_nPlayerHandle\" offset from gamedata.");
-		offsets.cmdoffsets.m_nPlayerHandle = StringToInt(buff);
+		gmOffsets.cmdoffsets.m_nPlayerHandle = StringToInt(buff);
 	}
 	
 	ASSERT_FMT(gd.GetKeyValue("CMoveData::m_vecVelocity", buff, sizeof(buff)), "Can't get \"CMoveData::m_vecVelocity\" offset from gamedata.");
-	offsets.cmdoffsets.m_vecVelocity = StringToInt(buff);
+	gmOffsets.cmdoffsets.m_vecVelocity = StringToInt(buff);
 	ASSERT_FMT(gd.GetKeyValue("CMoveData::m_vecAbsOrigin", buff, sizeof(buff)), "Can't get \"CMoveData::m_vecAbsOrigin\" offset from gamedata.");
-	offsets.cmdoffsets.m_vecAbsOrigin = StringToInt(buff);
+	gmOffsets.cmdoffsets.m_vecAbsOrigin = StringToInt(buff);
 	
 	if(gEngineVersion == Engine_CSGO)
 	{
@@ -215,16 +215,17 @@ stock void InitGameMovement(GameData gd)
 		ASSERT(gUnlockTraceFilter);
 	}
 	else if(gEngineVersion == Engine_CSS && gOSType == OSLinux)
-	{
-		//ClipVelocity
-		StartPrepSDKCall(SDKCall_Static);
-		
-		ASSERT_MSG(PrepSDKCall_SetFromConf(gd, SDKConf_Signature, "CGameMovement::ClipVelocity"), "Failed to get \"CGameMovement::ClipVelocity\" signature.");
-		PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
-		PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
-		PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
-		PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
-		PrepSDKCall_AddParameter(SDKType_Float, SDKPass_Plain);
+		{
+			//ClipVelocity
+			StartPrepSDKCall(SDKCall_Static);
+			
+			ASSERT_MSG(PrepSDKCall_SetFromConf(gd, SDKConf_Signature, "CGameMovement::ClipVelocity"), "Failed to get \"CGameMovement::ClipVelocity\" signature.");
+			PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain); // this
+			PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain); // in
+			PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain); // normal
+			PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain); // out
+			PrepSDKCall_AddParameter(SDKType_Float, SDKPass_Plain); // overbounce
+			PrepSDKCall_AddParameter(SDKType_Float, SDKPass_Plain); // stop epsilon
 		
 		PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_Plain);
 		
@@ -339,19 +340,31 @@ stock void UnlockTraceFilter(CGameMovement pThis, CTraceFilterSimple filter)
 
 stock int ClipVelocity(CGameMovement pThis, Vector invec, Vector normal, Vector out, float overbounce)
 {
+	int client = g_CurrentMoveClient;
+	bool sendForward = (client > 0 && gFwd_OnClipVelocity != null && GetForwardFunctionCount(gFwd_OnClipVelocity) > 0);
+	float inBuff[3], normalBuff[3], outBuff[3];
+	
+	if(sendForward)
+	{
+		invec.ToArray(inBuff);
+		normal.ToArray(normalBuff);
+	}
+	
+	int result;
+	
 	if(gEngineVersion == Engine_CSGO)
 	{
 		ASSERT(pThis.Address != Address_Null);
-		return SDKCall(gClipVelocity, pThis.Address, invec.Address, normal.Address, out.Address, overbounce);
+		result = SDKCall(gClipVelocity, pThis.Address, invec.Address, normal.Address, out.Address, overbounce);
 	}
 	else if (gEngineVersion == Engine_CSS && gOSType == OSLinux)
 	{
-		return SDKCall(gClipVelocity, pThis.Address, invec.Address, normal.Address, out.Address, overbounce, 0.0);
+		result = SDKCall(gClipVelocity, pThis.Address, invec.Address, normal.Address, out.Address, overbounce, 0.0);
 	}
 	else
 	{
 		float backoff, angle, adjust;
-		int blocked;
+		int blocked = 0;
 		
 		angle = normal.z;
 		
@@ -374,8 +387,16 @@ stock int ClipVelocity(CGameMovement pThis, Vector invec, Vector normal, Vector 
 			out.z -= (normal.z * adjust);
 		}
 		
-		return blocked;
+		result = blocked;
 	}
+	
+	if(sendForward)
+	{
+		out.ToArray(outBuff);
+		FireClipVelocityForward(client, inBuff, normalBuff, outBuff, overbounce);
+	}
+	
+	return result;
 }
 
 stock Vector GetPlayerMinsCSS(CGameMovement pThis, Vector vec)

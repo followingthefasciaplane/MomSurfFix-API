@@ -40,27 +40,27 @@ enum struct BasePlayerOffsets
 	CEntInfoOffsets ceioffsets;
 	CBaseEntityListOffsets cbeloffsets;
 }
-static BasePlayerOffsets offsets;
+static BasePlayerOffsets bOffsets;
 
 methodmap CBasePlayer < AddressBase
 {
 	property float m_surfaceFriction
 	{
-		public get() { return view_as<float>(LoadFromAddress(this.Address + offsets.cbpoffsets.m_surfaceFriction, NumberType_Int32)); }
+		public get() { return view_as<float>(LoadFromAddress(this.Address + bOffsets.cbpoffsets.m_surfaceFriction, NumberType_Int32)); }
 	}
 	
 	//...
 	
 	property Address m_hGroundEntity
 	{
-		public get() { return view_as<Address>(LoadFromAddress(this.Address + offsets.cbpoffsets.m_hGroundEntity, NumberType_Int32)); }
+		public get() { return view_as<Address>(LoadFromAddress(this.Address + bOffsets.cbpoffsets.m_hGroundEntity, NumberType_Int32)); }
 	}
 	
 	//...
 	
 	property MoveType m_MoveType
 	{
-		public get() { return view_as<MoveType>(LoadFromAddress(this.Address + offsets.cbpoffsets.m_MoveType, NumberType_Int8)); }
+		public get() { return view_as<MoveType>(LoadFromAddress(this.Address + bOffsets.cbpoffsets.m_MoveType, NumberType_Int8)); }
 	}
 }
 
@@ -68,7 +68,7 @@ methodmap CBaseEntityList < AddressBase
 {
 	property PseudoStackArray m_EntPtrArray
 	{
-		public get() { return view_as<PseudoStackArray>(LoadFromAddress(this.Address + offsets.cbeloffsets.m_EntPtrArray, NumberType_Int32)); }
+		public get() { return view_as<PseudoStackArray>(LoadFromAddress(this.Address + bOffsets.cbeloffsets.m_EntPtrArray, NumberType_Int32)); }
 	}
 }
 
@@ -78,7 +78,7 @@ methodmap CBaseHandle < AddressBase
 {
 	property int m_Index
 	{
-		public get() { return LoadFromAddress(this.Address + offsets.cbhoffsets.m_Index, NumberType_Int32); }
+		public get() { return LoadFromAddress(this.Address + bOffsets.cbhoffsets.m_Index, NumberType_Int32); }
 	}
 	
 	public CBaseHandle Get()
@@ -96,17 +96,17 @@ methodmap CEntInfo < AddressBase
 {
 	public static int Size()
 	{
-		return offsets.ceioffsets.size;
+		return bOffsets.ceioffsets.size;
 	}
 	
 	property CBaseHandle m_pEntity
 	{
-		public get() { return view_as<CBaseHandle>(LoadFromAddress(this.Address + offsets.ceioffsets.m_pEntity, NumberType_Int32)); }
+		public get() { return view_as<CBaseHandle>(LoadFromAddress(this.Address + bOffsets.ceioffsets.m_pEntity, NumberType_Int32)); }
 	}
 	
 	property int m_SerialNumber
 	{
-		public get() { return LoadFromAddress(this.Address + offsets.ceioffsets.m_SerialNumber, NumberType_Int32); }
+		public get() { return LoadFromAddress(this.Address + bOffsets.ceioffsets.m_SerialNumber, NumberType_Int32); }
 	}
 }
 
@@ -123,26 +123,26 @@ stock bool InitBasePlayer(GameData gd)
 		
 		//CBaseEntityList
 		ASSERT_FMT(gd.GetKeyValue("CBaseEntityList::m_EntPtrArray", buff, sizeof(buff)), "Can't get \"CBaseEntityList::m_EntPtrArray\" offset from gamedata.");
-		offsets.cbeloffsets.m_EntPtrArray = StringToInt(buff);
+		bOffsets.cbeloffsets.m_EntPtrArray = StringToInt(buff);
 		
 		//CEntInfo
 		ASSERT_FMT(gd.GetKeyValue("CEntInfo::m_pEntity", buff, sizeof(buff)), "Can't get \"CEntInfo::m_pEntity\" offset from gamedata.");
-		offsets.ceioffsets.m_pEntity = StringToInt(buff);
+		bOffsets.ceioffsets.m_pEntity = StringToInt(buff);
 		ASSERT_FMT(gd.GetKeyValue("CEntInfo::m_SerialNumber", buff, sizeof(buff)), "Can't get \"CEntInfo::m_SerialNumber\" offset from gamedata.");
-		offsets.ceioffsets.m_SerialNumber = StringToInt(buff);
+		bOffsets.ceioffsets.m_SerialNumber = StringToInt(buff);
 		ASSERT_FMT(gd.GetKeyValue("CEntInfo::size", buff, sizeof(buff)), "Can't get \"CEntInfo::size\" offset from gamedata.");
-		offsets.ceioffsets.size = StringToInt(buff);
+		bOffsets.ceioffsets.size = StringToInt(buff);
 		
 		//CBaseHandle
 		ASSERT_FMT(gd.GetKeyValue("CBaseHandle::m_Index", buff, sizeof(buff)), "Can't get \"CBaseHandle::m_Index\" offset from gamedata.");
-		offsets.cbhoffsets.m_Index = StringToInt(buff);
+		bOffsets.cbhoffsets.m_Index = StringToInt(buff);
 		
 		//CBasePlayer
 		ASSERT_FMT(gd.GetKeyValue("CBasePlayer::m_surfaceFriction", buff, sizeof(buff)), "Can't get \"CBasePlayer::m_surfaceFriction\" offset from gamedata.");
 		int offs = StringToInt(buff);
 		int prop_offs = FindSendPropInfo("CBasePlayer", "m_szLastPlaceName");
 		ASSERT_FMT(prop_offs > 0, "Can't get \"CBasePlayer::m_szLastPlaceName\" offset from FindSendPropInfo().");
-		offsets.cbpoffsets.m_surfaceFriction = prop_offs + offs;
+		bOffsets.cbpoffsets.m_surfaceFriction = prop_offs + offs;
 	}
 	else if(gEngineVersion == Engine_CSGO)
 	{
@@ -151,16 +151,16 @@ stock bool InitBasePlayer(GameData gd)
 		int offs = StringToInt(buff);
 		int prop_offs = FindSendPropInfo("CBasePlayer", "m_ubEFNoInterpParity");
 		ASSERT_FMT(prop_offs > 0, "Can't get \"CBasePlayer::m_ubEFNoInterpParity\" offset from FindSendPropInfo().");
-		offsets.cbpoffsets.m_surfaceFriction = prop_offs - offs;
+		bOffsets.cbpoffsets.m_surfaceFriction = prop_offs - offs;
 	}
 	
-	offsets.cbpoffsets.m_hGroundEntity = FindSendPropInfo("CBasePlayer", "m_hGroundEntity");
-	ASSERT_FMT(offsets.cbpoffsets.m_hGroundEntity > 0, "Can't get \"CBasePlayer::m_hGroundEntity\" offset from FindSendPropInfo().");
+	bOffsets.cbpoffsets.m_hGroundEntity = FindSendPropInfo("CBasePlayer", "m_hGroundEntity");
+	ASSERT_FMT(bOffsets.cbpoffsets.m_hGroundEntity > 0, "Can't get \"CBasePlayer::m_hGroundEntity\" offset from FindSendPropInfo().");
 	
 	if(IsValidEntity(0))
 	{
-		offsets.cbpoffsets.m_MoveType = FindDataMapInfo(0, "m_MoveType");
-		ASSERT_FMT(offsets.cbpoffsets.m_MoveType != -1, "Can't get \"CBasePlayer::m_MoveType\" offset from FindDataMapInfo().");
+		bOffsets.cbpoffsets.m_MoveType = FindDataMapInfo(0, "m_MoveType");
+		ASSERT_FMT(bOffsets.cbpoffsets.m_MoveType != -1, "Can't get \"CBasePlayer::m_MoveType\" offset from FindDataMapInfo().");
 	}
 	else
 		early = true;
@@ -171,8 +171,8 @@ stock bool InitBasePlayer(GameData gd)
 stock void LateInitBasePlayer(GameData gd)
 {
 	ASSERT(IsValidEntity(0));
-	offsets.cbpoffsets.m_MoveType = FindDataMapInfo(0, "m_MoveType");
-	ASSERT_FMT(offsets.cbpoffsets.m_MoveType != -1, "Can't get \"CBasePlayer::m_MoveType\" offset from FindDataMapInfo().");
+	bOffsets.cbpoffsets.m_MoveType = FindDataMapInfo(0, "m_MoveType");
+	ASSERT_FMT(bOffsets.cbpoffsets.m_MoveType != -1, "Can't get \"CBasePlayer::m_MoveType\" offset from FindDataMapInfo().");
 }
 
 stock CBaseHandle LookupEntity(CBaseHandle handle)

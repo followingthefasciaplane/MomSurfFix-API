@@ -1,10 +1,10 @@
 #if defined _memutils_included
-#endinput
+	#endinput
 #endif
 #define _memutils_included
 
-#include "glib/assertutils"
-#include "glib/addressutils"
+#include "assertutils.inc"
+#include "addressutils.inc"
 
 /* Compile time settings for this include. Should be defined before including this file.
 *  #define MEMUTILS_PLUGINENDCALL //This should be defined if main plugin has OnPluginEnd() forward used.
@@ -167,7 +167,14 @@ stock void DumpOnAddress(Address addr, int len, int columns = 10)
 	{
 		chr = LoadFromAddress(addr + i, NumberType_Int8);
 		Format(buff, sizeof(buff), "%s %02X", buff, chr);
-		Format(buff2, sizeof(buff2), "%s%c", buff2, (chr > ' ' && chr != 0x7F && chr != 0xFF ? chr : '.'));
+		
+		bool printable = (chr > ' ' && chr != 0x7F && chr != 0xFF);
+		char printableChr;
+		if(printable)
+			printableChr = chr;
+		else
+			printableChr = '.';
+		Format(buff2, sizeof(buff2), "%s%c", buff2, printableChr);
 		if(i % columns == columns - 1)
 		{
 			PrintToServer(__SNAME..."%s %s", buff, buff2);
